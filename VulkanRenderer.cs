@@ -28,6 +28,13 @@ public sealed unsafe class VulkanRenderer : IDisposable
     private VkPipelineLayout _pipelineLayout;
     private VkPipeline _pipeline;
 
+    private VkBuffer _vertexBuffer;
+    private VkDeviceMemory _vertexMemory;
+
+    private VkBuffer _indexBuffer;
+    private VkDeviceMemory _indexMemory;
+
+    private int _indexCount;
     private readonly Instance _instance;
     private readonly VkSurfaceKHR _surface;
     private readonly PhysicalDevice _physicalDevice;
@@ -41,6 +48,33 @@ public sealed unsafe class VulkanRenderer : IDisposable
     private readonly Frame[] _frames;
     private int _currentFrame;
 
+    
+    private static readonly Vertex[] RectangleVertices =
+    [
+        new Vertex
+        {
+            Position = new float3(-0.5f, -0.5f, 0.0f)
+        },
+        new Vertex
+        {
+            Position = new float3(0.5f, -0.5f, 0.0f)
+        },
+        new Vertex
+        {
+            Position = new float3(0.5f, 0.5f, 0.0f)
+        },
+        new Vertex
+        {
+            Position = new float3(-0.5f, 0.5f, 0.0f)
+        }
+    ];
+
+
+    private static readonly uint[] RectangleIndices =
+    [
+        0, 1, 2,
+        2, 3, 0
+    ];
 
     public VulkanRenderer(GlfwWindow window)
     {
@@ -77,6 +111,8 @@ public sealed unsafe class VulkanRenderer : IDisposable
         CreateFramebuffers();
 
         CreatePipeline();
+
+        CreateMeshBuffers();
 
         Console.WriteLine(
             "Vulkan initialized successfully!"
@@ -222,6 +258,92 @@ public sealed unsafe class VulkanRenderer : IDisposable
 
         return VkPresentModeKHR.FifoKHR;
     }
+
+    private (VkBuffer, VkDeviceMemory) CreateHostVisibleBuffer<T>(
+        T[] data,
+        VkBufferUsageFlags usage
+    )
+    where T : unmanaged
+    {
+        // 1. Calculate the required data size.
+        var size = ByteSize.Of<T>(data.Length);
+
+        // 2. Create the buffer resource.
+        var buffer = _device.CreateBuffer(
+            new VkBufferCreateInfo
+            {
+                Size = size,
+                Usage = usage,
+                SharingMode = VkSharingMode.Exclusive
+            },
+            null
+        );
+
+        // 3. Query the buffer's memory requirements.
+        var requirements =
+            _device.GetBufferMemoryRequirements(buffer);
+
+        // 4. Find compatible, CPU-accessible memory.
+        var memoryType = _physicalDevice.FindMemoryType(
+            (int)requirements.MemoryTypeBits,
+
+            VkMemoryPropertyFlags.HostVisibleBit |
+            VkMemoryPropertyFlags.HostCoherentBit
+        );
+
+        // 5. Allocate memory.
+        var memory = _device.AllocateMemory(
+            new VkMemoryAllocateInfo
+            {
+                AllocationSize = requirements.Size,
+                MemoryTypeIndex = memoryType
+            },
+            null
+        );
+
+        // 6. Bind the memory to the buffer.
+        _device.BindBufferMemory(
+            buffer,
+            memory,
+            ByteSize.Zero
+        );
+
+        // 7. Copy the C# array into the mapped memory.
+        _device.WriteMemory(
+            data.AsSpan(),
+            memory
+        );
+
+        return (buffer, memory);
+    }
+    
+    private void CreateMeshBuffers()
+    {
+        // Upload the four rectangle vertices.
+        (_vertexBuffer, _vertexMemory) =
+            CreateHostVisibleBuffer(
+                RectangleVertices,
+                VkBufferUsageFlags.VertexBufferBit
+            );
+
+        // Upload the six indices.
+        (_indexBuffer, _indexMemory) =
+            CreateHostVisibleBuffer(
+                RectangleIndices,
+                VkBufferUsageFlags.IndexBufferBit
+            );
+
+        _indexCount = RectangleIndices.Length;
+
+        Console.WriteLine(
+            $"Uploaded {RectangleVertices.Length} vertices."
+        );
+
+        Console.WriteLine(
+            $"Uploaded {_indexCount} indices."
+        );
+    }
+
 
     private (PhysicalDevice, int) PickPhysicalDevice()
     {
@@ -466,11 +588,39 @@ public sealed unsafe class VulkanRenderer : IDisposable
             ];
 
             // No vertex buffers: positions come from the shader.
+           var bindingDescription =
+            new VkVertexInputBindingDescription
+            {
+                Binding = 0,
+
+                Stride = ByteSize.Of<Vertex>(),
+
+                InputRate = VkVertexInputRate.Vertex
+            };
+
+        // Describe the position attribute.
+            var positionAttribute =
+                new VkVertexInputAttributeDescription
+                {
+                    Location = 0,
+                    Binding = 0,
+
+                    Format = VkFormat.R32G32B32SFloat,
+
+                    Offset = ByteSize.OffsetOf<Vertex>(
+                        nameof(Vertex.Position)
+                    )
+                };
+
+            // Connect the descriptions to the pipeline.
             var vertexInput =
                 new VkPipelineVertexInputStateCreateInfo
                 {
-                    VertexBindingDescriptionCount = 0,
-                    VertexAttributeDescriptionCount = 0
+                    VertexBindingDescriptionCount = 1,
+                    VertexBindingDescriptions = &bindingDescription,
+
+                    VertexAttributeDescriptionCount = 1,
+                    VertexAttributeDescriptions = &positionAttribute
                 };
 
             // Every three vertices form one triangle.
@@ -812,9 +962,19 @@ public sealed unsafe class VulkanRenderer : IDisposable
                 }
             ]
         );
+        commandBuffer.BindVertexBuffer(
+            0,
+            _vertexBuffer
+        );
+  
+        commandBuffer.BindIndexBuffer(
+            _indexBuffer,
+            ByteSize.Zero,
+            VkIndexType.UInt32
+        );
 
         // 8. Draw three vertices!
-        commandBuffer.Draw(3, 1, 0, 0);
+        commandBuffer.DrawIndexed(_indexCount, 1, 0, 0, 0);
 
         // 9. Finish recording.
         commandBuffer.EndRenderPass();
@@ -998,10 +1158,42 @@ public sealed unsafe class VulkanRenderer : IDisposable
         _framebuffers = [];
     }
 
+    private void DestroyMeshBuffer()
+    {
+        if (!_vertexBuffer.IsNull())
+        {
+            _device.DestroyBuffer(
+                _vertexBuffer,
+                null
+            );
+
+            _device.FreeMemory(
+                _vertexMemory,
+                null
+            );
+        }
+
+        if (!_indexBuffer.IsNull())
+        {
+            _device.DestroyBuffer(_indexBuffer, null);
+            _device.FreeMemory(_indexMemory, null);
+        }
+
+        _vertexBuffer = default;
+        _vertexMemory = default;
+
+        _indexBuffer = default;
+        _indexMemory = default;
+
+        _indexCount = 0;
+
+    }
+
     public void Dispose()
     {
         _device.WaitIdle();
 
+        DestroyMeshBuffer();
         DestroyPipeline();
         DestroyFramebuffers();
 
