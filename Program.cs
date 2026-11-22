@@ -28,6 +28,7 @@ try
 
     Console.WriteLine("Application is running.");
 
+    var camera = new OrbitCamera();
     var stopwatch = Stopwatch.StartNew();
 
     while (!window.ShouldClose)
@@ -38,11 +39,16 @@ try
         float elapsedSeconds =
             (float)stopwatch.Elapsed.TotalSeconds;
 
-        // Rotate at 45 degrees per second.
-        float angle =
-            elapsedSeconds * MathF.PI / 4.0f;
+        // Orbit camera around the cube.
+        camera.Yaw =
+            elapsedSeconds * 0.5f;
 
-        renderer.DrawFrame(angle);
+        float aspectRatio = (float)renderer.Width / renderer.Height;
+
+        var mvp = camera.ViewProjection(aspectRatio);
+
+
+        renderer.DrawFrame(mvp);
     }
     // Resource cleanup will be added below.
 }

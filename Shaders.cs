@@ -9,14 +9,19 @@ internal static class Shaders
 
         layout(push_constant) uniform PushConstants
         {
-            mat4 model;
+            mat4 mvp;
         } pc;
 
         void main()
         {
-            vec4 position = vec4(inPosition, 1.0);
+            vec4 clip = pc.mvp * vec4(inPosition, 1.0);
 
-            gl_Position = pc.model * position;
+            // Convert the projection convention
+            // used by the sample to Vulkan clip space.
+            clip.y = -clip.y;
+            clip.z = (clip.z + clip.w) * 0.5;
+
+            gl_Position = clip;
         }
         """;
 
