@@ -1,5 +1,6 @@
 ﻿using Brutal.GlfwApi;
 using Brutal.Numerics;
+using System.Diagnostics;
 
 if (!Glfw.Init())
     throw new Exception("Failed to initialize GLFW");
@@ -27,13 +28,22 @@ try
 
     Console.WriteLine("Application is running.");
 
+    var stopwatch = Stopwatch.StartNew();
+
     while (!window.ShouldClose)
     {
         Glfw.PollEvents();
 
-        renderer.DrawFrame();
-    }
+        // Time elapsed since application startup.
+        float elapsedSeconds =
+            (float)stopwatch.Elapsed.TotalSeconds;
 
+        // Rotate at 45 degrees per second.
+        float angle =
+            elapsedSeconds * MathF.PI / 4.0f;
+
+        renderer.DrawFrame(angle);
+    }
     // Resource cleanup will be added below.
 }
 finally

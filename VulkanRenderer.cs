@@ -573,10 +573,19 @@ public sealed unsafe class VulkanRenderer : IDisposable
 
         try
         {
+            const int PushConstantSize = 64;
+
+            var PushConstantRange = new VkPushConstantRange
+            {
+                StageFlags = VkShaderStageFlags.VertexBit,
+                Offset = ByteSize.Zero,
+                Size = ByteSize.Of(PushConstantSize)
+            };
+
             // No descriptors or push constants needed.
             _pipelineLayout = _device.CreatePipelineLayout(
                 [],
-                [],
+                [PushConstantRange],
                 null
             );
 
@@ -844,7 +853,7 @@ public sealed unsafe class VulkanRenderer : IDisposable
     }
 
 
-    public void DrawFrame()
+    public void DrawFrame(float angle)
     {
         var frame = _frames[_currentFrame];
 
@@ -971,6 +980,15 @@ public sealed unsafe class VulkanRenderer : IDisposable
             _indexBuffer,
             ByteSize.Zero,
             VkIndexType.UInt32
+        );
+
+        var rotation = RotationMatrix.AroundZ(angle);
+
+        commandBuffer.PushConstants(
+            _pipelineLayout,
+            VkShaderStageFlags.VertexBit,
+            ByteSize.Zero,
+            rotation
         );
 
         // 8. Draw three vertices!
