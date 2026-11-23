@@ -58,30 +58,115 @@ public sealed unsafe class VulkanRenderer : IDisposable
     private int _currentFrame;
 
     
-    private static readonly Vertex[] CubeVertices =
-    [
-        new() { Position = new float3(-0.5f, -0.5f, -0.5f) }, // 0
-        new() { Position = new float3( 0.5f, -0.5f, -0.5f) }, // 1
-        new() { Position = new float3( 0.5f,  0.5f, -0.5f) }, // 2
-        new() { Position = new float3(-0.5f,  0.5f, -0.5f) }, // 3
+private static (Vertex[] Vertices, uint[] Indices) CreateCubeMesh()
+    {
+        var vertices = new List<Vertex>();
+        var indices = new List<uint>();
 
-        new() { Position = new float3(-0.5f, -0.5f,  0.5f) }, // 4
-        new() { Position = new float3( 0.5f, -0.5f,  0.5f) }, // 5
-        new() { Position = new float3( 0.5f,  0.5f,  0.5f) }, // 6
-        new() { Position = new float3(-0.5f,  0.5f,  0.5f) }  // 7
-    ];
+        void AddFace(
+            float3 a,
+            float3 b,
+            float3 c,
+            float3 d,
+            float3 normal)
+        {
+            uint start = (uint)vertices.Count;
 
+            vertices.Add(new Vertex
+            {
+                Position = a,
+                Normal = normal
+            });
 
-    private static readonly uint[] CubeIndices =
-    [
-        0, 2, 1, 0, 3, 2, // Back
-        4, 5, 6, 4, 6, 7, // Front
-        0, 4, 7, 0, 7, 3, // Left
-        1, 2, 6, 1, 6, 5, // Right
-        3, 7, 6, 3, 6, 2, // Top
-        0, 1, 5, 0, 5, 4  // Bottom
-    ];
+            vertices.Add(new Vertex
+            {
+                Position = b,
+                Normal = normal
+            });
 
+            vertices.Add(new Vertex
+            {
+                Position = c,
+                Normal = normal
+            });
+
+            vertices.Add(new Vertex
+            {
+                Position = d,
+                Normal = normal
+            });
+
+            // Two triangles per face.
+            indices.AddRange(
+            [
+                start,
+                start + 1,
+                start + 2,
+
+                start,
+                start + 2,
+                start + 3
+            ]);
+        }
+
+        // Front (+Z)
+        AddFace(
+            new(-0.5f, -0.5f,  0.5f),
+            new( 0.5f, -0.5f,  0.5f),
+            new( 0.5f,  0.5f,  0.5f),
+            new(-0.5f,  0.5f,  0.5f),
+            new(0f, 0f, 1f)
+        );
+
+        // Back (-Z)
+        AddFace(
+            new( 0.5f, -0.5f, -0.5f),
+            new(-0.5f, -0.5f, -0.5f),
+            new(-0.5f,  0.5f, -0.5f),
+            new( 0.5f,  0.5f, -0.5f),
+            new(0f, 0f, -1f)
+        );
+
+        // Right (+X)
+        AddFace(
+            new(0.5f, -0.5f,  0.5f),
+            new(0.5f, -0.5f, -0.5f),
+            new(0.5f,  0.5f, -0.5f),
+            new(0.5f,  0.5f,  0.5f),
+            new(1f, 0f, 0f)
+        );
+
+        // Left (-X)
+        AddFace(
+            new(-0.5f, -0.5f, -0.5f),
+            new(-0.5f, -0.5f,  0.5f),
+            new(-0.5f,  0.5f,  0.5f),
+            new(-0.5f,  0.5f, -0.5f),
+            new(-1f, 0f, 0f)
+        );
+
+        // Top (+Y)
+        AddFace(
+            new(-0.5f, 0.5f,  0.5f),
+            new( 0.5f, 0.5f,  0.5f),
+            new( 0.5f, 0.5f, -0.5f),
+            new(-0.5f, 0.5f, -0.5f),
+            new(0f, 1f, 0f)
+        );
+
+        // Bottom (-Y)
+        AddFace(
+            new(-0.5f, -0.5f, -0.5f),
+            new( 0.5f, -0.5f, -0.5f),
+            new( 0.5f, -0.5f,  0.5f),
+            new(-0.5f, -0.5f,  0.5f),
+            new(0f, -1f, 0f)
+        );
+
+        return (vertices.ToArray(), indices.ToArray());
+    }
+
+    
     public VulkanRenderer(GlfwWindow window)
     {
         _window = window;
@@ -327,24 +412,25 @@ public sealed unsafe class VulkanRenderer : IDisposable
     
     private void CreateMeshBuffers()
     {
+        var (vertices, indices) = CreateCubeMesh();
         // Upload the four rectangle vertices.
         (_vertexBuffer, _vertexMemory) =
             CreateHostVisibleBuffer(
-                CubeVertices,
+                vertices,
                 VkBufferUsageFlags.VertexBufferBit
             );
 
         // Upload the six indices.
         (_indexBuffer, _indexMemory) =
             CreateHostVisibleBuffer(
-                CubeIndices,
+                indices,
                 VkBufferUsageFlags.IndexBufferBit
             );
 
-        _indexCount = CubeIndices.Length;
+        _indexCount = indices.Length;
 
         Console.WriteLine(
-            $"Uploaded {CubeVertices.Length} vertices."
+            $"Uploaded {vertices.Length} vertices."
         );
 
         Console.WriteLine(
@@ -619,35 +705,45 @@ public sealed unsafe class VulkanRenderer : IDisposable
             new VkVertexInputBindingDescription
             {
                 Binding = 0,
-
                 Stride = ByteSize.Of<Vertex>(),
-
                 InputRate = VkVertexInputRate.Vertex
             };
 
         // Describe the position attribute.
-            var positionAttribute =
-                new VkVertexInputAttributeDescription
+            Span<VkVertexInputAttributeDescription> attributes =
+            [
+                new()
                 {
                     Location = 0,
                     Binding = 0,
-
                     Format = VkFormat.R32G32B32SFloat,
-
                     Offset = ByteSize.OffsetOf<Vertex>(
                         nameof(Vertex.Position)
                     )
-                };
+                },
 
-            // Connect the descriptions to the pipeline.
+                new()
+                {
+                    Location = 1,
+                    Binding = 0,
+                    Format = VkFormat.R32G32B32SFloat,
+                    Offset = ByteSize.OffsetOf<Vertex>(
+                        nameof(Vertex.Normal)
+                    )
+                }
+            ];
+
             var vertexInput =
                 new VkPipelineVertexInputStateCreateInfo
                 {
                     VertexBindingDescriptionCount = 1,
                     VertexBindingDescriptions = &bindingDescription,
 
-                    VertexAttributeDescriptionCount = 1,
-                    VertexAttributeDescriptions = &positionAttribute
+                    VertexAttributeDescriptionCount =
+                        attributes.Length,
+
+                    VertexAttributeDescriptions =
+                        attributes.AsPointer()
                 };
 
             // Every three vertices form one triangle.
