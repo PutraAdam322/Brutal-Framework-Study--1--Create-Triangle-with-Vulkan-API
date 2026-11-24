@@ -19,12 +19,19 @@ try
         new GlfwWindow.CreateInfo
         {
             Title = "BRUTAL Vulkan Triangle",
-            Size = new int2(800, 600)
+            Size = new int2(1280, 720)
         }
     );
 
+    var mesh = MeshImport.OpenDialogAndLoad();
+
+    if (mesh is null)
+    {
+        return;
+    }
+
     // Initialize Vulkan using our renderer.
-    using var renderer = new VulkanRenderer(window);
+    using var renderer = new VulkanRenderer(window, mesh);
 
     Console.WriteLine("Application is running.");
 

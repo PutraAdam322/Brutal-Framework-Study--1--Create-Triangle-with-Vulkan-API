@@ -167,7 +167,7 @@ private static (Vertex[] Vertices, uint[] Indices) CreateCubeMesh()
     }
 
     
-    public VulkanRenderer(GlfwWindow window)
+    public VulkanRenderer(GlfwWindow window, MeshData mesh)
     {
         _window = window;
 
@@ -205,7 +205,7 @@ private static (Vertex[] Vertices, uint[] Indices) CreateCubeMesh()
 
         CreatePipeline();
 
-        CreateMeshBuffers();
+        CreateMeshBuffers(mesh);
 
         Console.WriteLine(
             "Vulkan initialized successfully!"
@@ -410,31 +410,41 @@ private static (Vertex[] Vertices, uint[] Indices) CreateCubeMesh()
         return (buffer, memory);
     }
     
-    private void CreateMeshBuffers()
+    private void CreateMeshBuffers(MeshData mesh)
     {
-        var (vertices, indices) = CreateCubeMesh();
-        // Upload the four rectangle vertices.
+        if (mesh.Vertices.Length == 0 || mesh.Indices.Length == 0)
+        {
+            throw new ArgumentException(
+                "The model contains no supported geometry."
+            );
+        }
+
         (_vertexBuffer, _vertexMemory) =
             CreateHostVisibleBuffer(
-                vertices,
+                mesh.Vertices,
                 VkBufferUsageFlags.VertexBufferBit
             );
 
-        // Upload the six indices.
         (_indexBuffer, _indexMemory) =
             CreateHostVisibleBuffer(
-                indices,
+                mesh.Indices,
                 VkBufferUsageFlags.IndexBufferBit
             );
 
-        _indexCount = indices.Length;
+        _indexCount = mesh.Indices.Length;
+
+        Console.WriteLine($"Model: {mesh.Name}");
 
         Console.WriteLine(
-            $"Uploaded {vertices.Length} vertices."
+            $"Vertices: {mesh.Vertices.Length}"
         );
 
         Console.WriteLine(
-            $"Uploaded {_indexCount} indices."
+            $"Indices: {mesh.Indices.Length}"
+        );
+
+        Console.WriteLine(
+            $"Triangles: {mesh.TriangleCount}"
         );
     }
 
